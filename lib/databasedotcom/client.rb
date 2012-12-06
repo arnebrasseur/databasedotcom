@@ -405,7 +405,25 @@ module Databasedotcom
     end
 
     def log_response(result)
-      puts "***** RESPONSE: #{result.class.name} -> #{result.body}" if self.debugging
+      return unless self.debugging
+      begin
+        abbrev_json = Hash[ JSON.parse(result.body).map {|k,v| [k, v.to_json.length > 20 ? log_shorten(v) : v]} ].to_json
+        puts "***** RESPONSE: #{result.class.name} -> #{abbrev_json}"
+      rescue
+        puts "***** RESPONSE: #{result.class.name} -> #{result.body}"
+      end
+    end
+
+    def log_shorten(value)
+      case value
+      when String
+        value[0..10]+'...'
+      when Hash
+        shorter = Hash[ value.map {|k,v| [k, '...']}].to_json
+        shorter.length < 25 ? shorter : '{...}'.tap{|x| def x.to_json; self; end ; def x.as_json(*); self; end }
+      when Array
+        "[...#{value.size}...]".tap{|x| def x.to_json; self; end; def x.as_json(*); self; end }
+      end
     end
 
     def find_or_materialize(class_or_classname)
