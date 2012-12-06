@@ -106,7 +106,7 @@ module Databasedotcom
         user = self.username || options[:username]
         pass = self.password || options[:password]
         path = encode_path_with_params('/services/oauth2/token', :grant_type => 'password', :client_id => self.client_id, :client_secret => self.client_secret, :username => user, :password => pass)
-        log_request("https://#{self.host}/#{path}")
+        log_request("POST", "https://#{self.host}/#{path}")
         result = req.post(path, "")
         log_response(result)
         raise SalesForceError.new(result) unless result.is_a?(Net::HTTPOK)
@@ -285,7 +285,7 @@ module Databasedotcom
     # +Authorization+ header is automatically included, as are any additional headers specified in _headers_.  Returns the HTTPResult if it is of type
     # HTTPSuccess- raises SalesForceError otherwise.
     def http_get(path, parameters={}, headers={})
-      with_encoded_path_and_checked_response(path, parameters) do |encoded_path|
+      with_encoded_path_and_checked_response("GET", path, parameters) do |encoded_path|
         https_request.get(encoded_path, {"Authorization" => "OAuth #{self.oauth_token}"}.merge(headers))
       end
     end
@@ -295,7 +295,7 @@ module Databasedotcom
     # +Authorization+ header is automatically included, as are any additional headers specified in _headers_.  Returns the HTTPResult if it is of type
     # HTTPSuccess- raises SalesForceError otherwise.
     def http_delete(path, parameters={}, headers={})
-      with_encoded_path_and_checked_response(path, parameters, {:expected_result_class => Net::HTTPNoContent}) do |encoded_path|
+      with_encoded_path_and_checked_response("DELETE", path, parameters, {:expected_result_class => Net::HTTPNoContent}) do |encoded_path|
         https_request.delete(encoded_path, {"Authorization" => "OAuth #{self.oauth_token}"}.merge(headers))
       end
     end
@@ -304,7 +304,7 @@ module Databasedotcom
     # Query parameters are included from _parameters_.  The required +Authorization+ header is automatically included, as are any additional
     # headers specified in _headers_.  Returns the HTTPResult if it is of type HTTPSuccess- raises SalesForceError otherwise.
     def http_post(path, data=nil, parameters={}, headers={})
-      with_encoded_path_and_checked_response(path, parameters, {:data => data}) do |encoded_path|
+      with_encoded_path_and_checked_response("POST", path, parameters, {:data => data}) do |encoded_path|
         https_request.post(encoded_path, data, {"Content-Type" => data ? "application/json" : "text/plain", "Authorization" => "OAuth #{self.oauth_token}"}.merge(headers))
       end
     end
@@ -313,7 +313,7 @@ module Databasedotcom
     # Query parameters are included from _parameters_.  The required +Authorization+ header is automatically included, as are any additional
     # headers specified in _headers_.  Returns the HTTPResult if it is of type HTTPSuccess- raises SalesForceError otherwise.
     def http_patch(path, data=nil, parameters={}, headers={})
-      with_encoded_path_and_checked_response(path, parameters, {:data => data}) do |encoded_path|
+      with_encoded_path_and_checked_response("PATCH", path, parameters, {:data => data}) do |encoded_path|
         https_request.send_request("PATCH", encoded_path, data, {"Content-Type" => data ? "application/json" : "text/plain", "Authorization" => "OAuth #{self.oauth_token}"}.merge(headers))
       end
     end
@@ -323,23 +323,23 @@ module Databasedotcom
     # +Authorization+ header is automatically included, as are any additional headers specified in _headers_.
     # Returns the HTTPResult if it is of type HTTPSuccess- raises SalesForceError otherwise.
     def http_multipart_post(path, parts, parameters={}, headers={})
-      with_encoded_path_and_checked_response(path, parameters) do |encoded_path|
+      with_encoded_path_and_checked_response("POST", path, parameters) do |encoded_path|
         https_request.request(Net::HTTP::Post::Multipart.new(encoded_path, parts, {"Authorization" => "OAuth #{self.oauth_token}"}.merge(headers)))
       end
     end
 
     private
 
-    def with_encoded_path_and_checked_response(path, parameters, options = {})
+    def with_encoded_path_and_checked_response(verb, path, parameters, options = {})
       ensure_expected_response(options[:expected_result_class]) do
-        with_logging(encode_path_with_params(path, parameters), options) do |encoded_path|
+        with_logging(verb, encode_path_with_params(path, parameters), options) do |encoded_path|
           yield(encoded_path)
         end
       end
     end
 
-    def with_logging(encoded_path, options)
-      log_request(encoded_path, options)
+    def with_logging(verb, encoded_path, options)
+      log_request(verb, encoded_path, options)
       response = yield encoded_path
       log_response(response)
       response
@@ -351,7 +351,7 @@ module Databasedotcom
       unless response.is_a?(expected_result_class || Net::HTTPSuccess)
         if response.is_a?(Net::HTTPUnauthorized)
           if self.refresh_token
-            response = with_encoded_path_and_checked_response("/services/oauth2/token", { :grant_type => "refresh_token", :refresh_token => self.refresh_token, :client_id => self.client_id, :client_secret => self.client_secret}, :host => self.host) do |encoded_path|
+            response = with_encoded_path_and_checked_response("POST", "/services/oauth2/token", { :grant_type => "refresh_token", :refresh_token => self.refresh_token, :client_id => self.client_id, :client_secret => self.client_secret}, :host => self.host) do |encoded_path|
               response = https_request(self.host).post(encoded_path, nil)
               if response.is_a?(Net::HTTPOK)
                 parse_auth_response(response.body)
@@ -359,7 +359,7 @@ module Databasedotcom
               response
             end
           elsif self.username && self.password
-            response = with_encoded_path_and_checked_response("/services/oauth2/token", { :grant_type => "password", :username => self.username, :password => self.password, :client_id => self.client_id, :client_secret => self.client_secret}, :host => self.host) do |encoded_path|
+            response = with_encoded_path_and_checked_response("POST", "/services/oauth2/token", { :grant_type => "password", :username => self.username, :password => self.password, :client_id => self.client_id, :client_secret => self.client_secret}, :host => self.host) do |encoded_path|
               response = https_request(self.host).post(encoded_path, nil)
               if response.is_a?(Net::HTTPOK)
                 parse_auth_response(response.body)
@@ -395,9 +395,9 @@ module Databasedotcom
       (parameters || {}).collect { |k, v| "#{uri_escape(k)}=#{uri_escape(v)}" }.join('&')
     end
 
-    def log_request(path, options={})
+    def log_request(verb, path, options={})
       base_url = options[:host] ? "https://#{options[:host]}" : self.instance_url
-      puts "***** REQUEST: #{path.include?(':') ? path : URI.join(base_url, path)}#{options[:data] ? " => #{options[:data]}" : ''}" if self.debugging
+      puts "***** REQUEST: #{verb} #{path.include?(':') ? path : URI.join(base_url, path)}#{options[:data] ? " => #{options[:data]}" : ''}" if self.debugging
     end
 
     def uri_escape(str)
