@@ -397,7 +397,7 @@ module Databasedotcom
 
     def log_request(verb, path, options={})
       base_url = options[:host] ? "https://#{options[:host]}" : self.instance_url
-      puts "***** REQUEST: #{verb} #{path.include?(':') ? path : URI.join(base_url, path)}#{options[:data] ? " => #{options[:data]}" : ''}" if self.debugging
+      debug "***** REQUEST: #{verb} #{path.include?(':') ? path : URI.join(base_url, path)}#{options[:data] ? " => #{options[:data]}" : ''}" if self.debugging
     end
 
     def uri_escape(str)
@@ -408,9 +408,9 @@ module Databasedotcom
       return unless self.debugging
       begin
         abbrev_json = Hash[ JSON.parse(result.body).map {|k,v| [k, v.to_json.length > 20 ? log_shorten(v) : v]} ].to_json
-        puts "***** RESPONSE: #{result.class.name} -> #{abbrev_json}"
+        debug "***** RESPONSE: #{result.class.name} -> #{abbrev_json}"
       rescue
-        puts "***** RESPONSE: #{result.class.name} -> #{result.body}"
+        debug "***** RESPONSE: #{result.class.name} -> #{result.body}"
       end
     end
 
@@ -423,6 +423,15 @@ module Databasedotcom
         shorter.length < 25 ? shorter : '{...}'.tap{|x| def x.to_json; self; end ; def x.as_json(*); self; end }
       when Array
         "[...#{value.size}...]".tap{|x| def x.to_json; self; end; def x.as_json(*); self; end }
+      end
+    end
+
+    def debug(str)
+      return unless self.debugging
+      if self.debugging.respond_to?(:puts)
+        self.debugging.puts( str )
+      else
+        puts str
       end
     end
 
